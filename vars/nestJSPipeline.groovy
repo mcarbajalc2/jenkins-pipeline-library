@@ -2,19 +2,18 @@ def call(Map config) {
     pipeline {
         agent any
 
-        environment {
-            IMAGE_NAME      = config.imageName
-            REGISTRY        = config.registry ?: 'localhost:5000'
-            HOST_PORT_PROD  = config.hostPortProd ?: '8080'
-            HOST_PORT_DEV   = config.hostPortDev ?: '8081'
-            CONTAINER_PORT  = config.containerPort ?: '3000'
-        }
-
         stages {
 
-            stage('Prepare')  {
+            stage('Prepare') {
                 steps {
                     script {
+                        // Asignar las variables de entorno dinámicamente
+                        env.IMAGE_NAME      = config.imageName
+                        env.REGISTRY        = config.registry ?: 'localhost:5000'
+                        env.HOST_PORT_PROD  = config.hostPortProd ?: '8080'
+                        env.HOST_PORT_DEV   = config.hostPortDev ?: '8081'
+                        env.CONTAINER_PORT  = config.containerPort ?: '3000'
+
                         echo "Detected branch: ${env.BRANCH_NAME}"
 
                         if (env.BRANCH_NAME == 'main') {
