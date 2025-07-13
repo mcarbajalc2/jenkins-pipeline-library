@@ -13,6 +13,7 @@ def call(Map config) {
                         env.HOST_PORT_PROD  = config.hostPortProd ?: '8080'
                         env.HOST_PORT_DEV   = config.hostPortDev ?: '8081'
                         env.CONTAINER_PORT  = config.containerPort ?: '3000'
+                        env.DOCKER_NETWORK   = config.dockerNetwork ?: 'infra_default'
 
                         echo "Detected branch: ${env.BRANCH_NAME}"
 
@@ -63,7 +64,11 @@ def call(Map config) {
                     docker pull ${FULL_IMAGE}
 
                     echo "Running new container"
-                    docker run -d --name ${IMAGE_NAME}-${TAG} -p ${PORT}:${CONTAINER_PORT} ${FULL_IMAGE}
+                    docker run -d \
+                        --name ${IMAGE_NAME}-${TAG} \
+                        --network ${DOCKER_NETWORK} \
+                        -p ${PORT}:${CONTAINER_PORT} \
+                        ${FULL_IMAGE}
                     """
                 }
             }
