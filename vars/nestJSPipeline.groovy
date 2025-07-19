@@ -2,34 +2,41 @@ def call(Map config) {
     pipeline {
         agent any
 
+        environment {
+            IMAGE_NAME       = config.imageName
+            REGISTRY         = config.registry ?: 'localhost:5000'
+            HOST_PORT_PROD   = config.hostPortProd ?: '8080'
+            HOST_PORT_DEV    = config.hostPortDev ?: '8081'
+            CONTAINER_PORT   = config.containerPort ?: '3000'
+            DOCKER_NETWORK   = config.dockerNetwork ?: 'infra_default'
+        }
+
         stages {
 
             stage('Prepare') {
                 steps {
                     script {
-                        // Asignar las variables de entorno dinámicamente
-                        env.IMAGE_NAME      = config.imageName
-                        env.REGISTRY        = config.registry ?: 'localhost:5000'
-                        env.HOST_PORT_PROD  = config.hostPortProd ?: '8080'
-                        env.HOST_PORT_DEV   = config.hostPortDev ?: '8081'
-                        env.CONTAINER_PORT  = config.containerPort ?: '3000'
-                        env.DOCKER_NETWORK   = config.dockerNetwork ?: 'infra_default'
-
                         echo "Detected branch: ${env.BRANCH_NAME}"
 
                         if (env.BRANCH_NAME == 'main') {
                             env.TAG  = 'production'
-                            env.PORT = env.HOST_PORT_PROD
+                            env.APP_PORT = "${HOST_PORT_PROD}"
+                            env.SUPABASE_API_PORT = '9012'
+                            env.SUPABASE_STUDIO_PORT = '9014'
+                            env.DB_PORT = '9016'
                         } else if (env.BRANCH_NAME == 'develop') {
                             env.TAG  = 'develop'
-                            env.PORT = env.HOST_PORT_DEV
+                            env.APP_PORT = "${HOST_PORT_DEV}"
+                            env.SUPABASE_API_PORT = '9013'
+                            env.SUPABASE_STUDIO_PORT = '9015'
+                            env.DB_PORT = '9017'
                         } else {
                             error "Unsupported branch: ${env.BRANCH_NAME}"
                         }
 
-                        env.FULL_IMAGE = "${env.REGISTRY}/${env.IMAGE_NAME}:${env.TAG}"
+                        env.FULL_IMAGE = "${REGISTRY}/${IMAGE_NAME}:${TAG}"
 
-                        echo "Deploying: ${env.FULL_IMAGE} on host port ${env.PORT} -> container port ${env.CONTAINER_PORT}"
+                        echo "Deploying: ${FULL_IMAGE} on host port ${APP_PORT} -> container port ${CONTAINER_PORT}"
                     }
                 }
             }
@@ -51,28 +58,36 @@ def call(Map config) {
                 }
             }
 
-            stage('Deploy') {
+            stage('Stop previous stack') {
                 steps {
-                    sh """
-                    echo  "Stopping existing container if exists"
-                    if [ \$(docker ps -q -f name=${IMAGE_NAME}-${TAG}) ]; then
-                        docker stop ${IMAGE_NAME}-${TAG}
-                        docker rm ${IMAGE_NAME}-${TAG}
-                    fi
-
-                    echo "Pulling latest image from registry"
-                    docker pull ${FULL_IMAGE}
-
-                    echo "Running new container"
-                    docker run -d \
-                        --name ${IMAGE_NAME}-${TAG} \
-                        --network ${DOCKER_NETWORK} \
-                        -p ${PORT}:${CONTAINER_PORT} \
-                        ${FULL_IMAGE}
-                    """
+                    script {
+                        echo "Stopping and removing previous app container if exists"
+                        sh """
+                        if [ \$(docker ps -q -f name=${IMAGE_NAME}-${TAG}) ]; then
+                            docker stop ${IMAGE_NAME}-${TAG}
+                            docker rm ${IMAGE_NAME}-${TAG}
+                        fi
+                        """
+                    }
                 }
             }
 
+            stage('Deploy app & Supabase stack') {
+                steps {
+                    script {
+                        def envFile = env.TAG == 'production' ? '.env.production' : '.env.develop'
+
+                        echo "Pulling latest image ${FULL_IMAGE} from registry"
+                        sh "docker pull ${FULL_IMAGE}"
+
+                        echo "Deploying app and Supabase stack with ${envFile}"
+
+                        sh """
+                        docker compose --env-file ${envFile} up -d --build
+                        """
+                    }
+                }
+            }
         }
 
         post {
@@ -80,7 +95,7 @@ def call(Map config) {
                 echo "❌ Pipeline failed for branch ${env.BRANCH_NAME}."
             }
             success {
-                echo "✅ Pipeline succeeded for branch ${env.BRANCH_NAME} and deployed on port ${env.PORT}."
+                echo "✅ Pipeline succeeded for branch ${env.BRANCH_NAME} and deployed on port ${env.APP_PORT}."
             }
         }
     }
