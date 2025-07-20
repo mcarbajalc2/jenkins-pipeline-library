@@ -2,17 +2,16 @@ def call(Map config) {
     pipeline {
         agent any
 
-        environment {
-            IMAGE_NAME     = config.imageName
-            REGISTRY       = config.registry ?: 'localhost:5000'
-            DOCKER_NETWORK = config.dockerNetwork ?: 'infra_default'
-        }
-
         stages {
 
             stage('Prepare') {
                 steps {
                     script {
+                        env.IMAGE_NAME     = config.imageName
+                        env.REGISTRY       = config.registry ?: 'localhost:5000'
+                        env.DOCKER_NETWORK = config.dockerNetwork ?: 'infra_default'
+                        env.CONTAINER_PORT = config.containerPort ?: '3000'
+
                         echo "Detected branch: ${env.BRANCH_NAME}"
 
                         if (env.BRANCH_NAME == 'main') {
@@ -31,9 +30,9 @@ def call(Map config) {
                             error "Unsupported branch: ${env.BRANCH_NAME}"
                         }
 
-                        env.FULL_IMAGE = "${REGISTRY}/${IMAGE_NAME}:${env.TAG}"
+                        env.FULL_IMAGE = "${env.REGISTRY}/${env.IMAGE_NAME}:${env.TAG}"
 
-                        echo "Deploying: ${env.FULL_IMAGE} on host port ${env.APP_PORT} -> container port ${config.containerPort ?: '3000'}"
+                        echo "✅ Config ready: ${env.FULL_IMAGE} on ${env.APP_PORT} (${env.TAG})"
                     }
                 }
             }
@@ -46,12 +45,14 @@ def call(Map config) {
 
             stage('Build & push') {
                 steps {
-                    sh """
-                    echo "Building Docker image ${env.FULL_IMAGE}"
-                    docker build -t ${env.FULL_IMAGE} .
-                    echo "Pushing Docker image ${env.FULL_IMAGE}"
-                    docker push ${env.FULL_IMAGE}
-                    """
+                    script {
+                        sh """
+                        echo "🔷 Building Docker image ${env.FULL_IMAGE}"
+                        docker build -t ${env.FULL_IMAGE} .
+                        echo "🚀 Pushing Docker image ${env.FULL_IMAGE}"
+                        docker push ${env.FULL_IMAGE}
+                        """
+                    }
                 }
             }
 
@@ -63,7 +64,7 @@ def call(Map config) {
 
                         withCredentials([file(credentialsId: envFileCredentialId, variable: 'ENV_FILE')]) {
                             sh """
-                            echo "Copying env file to workspace as ${envFileName}"
+                            echo "🔷 Copying secret env file to workspace as ${envFileName}"
                             cp \$ENV_FILE ${envFileName}
                             """
                         }
@@ -74,11 +75,11 @@ def call(Map config) {
             stage('Stop previous app container') {
                 steps {
                     script {
-                        echo "Stopping and removing previous app container if exists"
+                        echo "🔷 Stopping and removing previous app container if exists"
                         sh """
-                        if [ \$(docker ps -q -f name=${IMAGE_NAME}-${env.TAG}) ]; then
-                            docker stop ${IMAGE_NAME}-${env.TAG}
-                            docker rm ${IMAGE_NAME}-${env.TAG}
+                        if [ \$(docker ps -q -f name=${env.IMAGE_NAME}-${env.TAG}) ]; then
+                            docker stop ${env.IMAGE_NAME}-${env.TAG}
+                            docker rm ${env.IMAGE_NAME}-${env.TAG}
                         fi
                         """
                     }
@@ -90,7 +91,7 @@ def call(Map config) {
                     script {
                         def envFile = env.TAG == 'production' ? '.env.production' : '.env.develop'
 
-                        echo "Deploying app and Supabase stack with ${envFile}"
+                        echo "🚀 Deploying app and Supabase stack with ${envFile}"
 
                         sh """
                         docker compose --env-file ${envFile} up -d --build
