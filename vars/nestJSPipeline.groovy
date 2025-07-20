@@ -11,6 +11,7 @@ def call(Map config) {
                         env.REGISTRY       = config.registry ?: 'localhost:5000'
                         env.DOCKER_NETWORK = config.dockerNetwork ?: 'infra_default'
                         env.CONTAINER_PORT = config.containerPort ?: '3000'
+                        env.ENV_CRED_BASE  = config.envCredentialBaseId ?: 'env'  // 👈 base para credenciales
 
                         echo "Detected branch: ${env.BRANCH_NAME}"
 
@@ -59,8 +60,10 @@ def call(Map config) {
             stage('Write env file') {
                 steps {
                     script {
-                        def envFileCredentialId = (env.TAG == 'production') ? 'env-production' : 'env-develop'
-                        def envFileName = (env.TAG == 'production') ? '.env.production' : '.env.develop'
+                        def envFileCredentialId = "${env.ENV_CRED_BASE}-${env.TAG}"
+                        def envFileName = ".env.${env.TAG}"
+
+                        echo "🔷 Will use credentials ID: ${envFileCredentialId} and write to: ${envFileName}"
 
                         withCredentials([file(credentialsId: envFileCredentialId, variable: 'ENV_FILE')]) {
                             sh """
@@ -89,7 +92,7 @@ def call(Map config) {
             stage('Deploy app & Supabase stack') {
                 steps {
                     script {
-                        def envFile = env.TAG == 'production' ? '.env.production' : '.env.develop'
+                        def envFile = ".env.${env.TAG}"
 
                         echo "🚀 Deploying app and Supabase stack with ${envFile}"
 
