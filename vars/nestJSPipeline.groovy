@@ -36,7 +36,7 @@ def call(Map config) {
 
                         env.FULL_IMAGE = "${REGISTRY}/${IMAGE_NAME}:${TAG}"
 
-                        echo "Deploying: ${FULL_IMAGE} on host port ${APP_PORT} -> container port ${CONTAINER_PORT}"
+                        echo "Deploying: ${FULL_IMAGE} on host port ${env.APP_PORT} -> container port ${CONTAINER_PORT}"
                     }
                 }
             }
@@ -58,7 +58,23 @@ def call(Map config) {
                 }
             }
 
-            stage('Stop previous stack') {
+            stage('Write env file') {
+                steps {
+                    script {
+                        def envFileCredentialId = (env.TAG == 'production') ? 'env-production' : 'env-develop'
+                        def envFileName = (env.TAG == 'production') ? '.env.production' : '.env.develop'
+
+                        withCredentials([file(credentialsId: envFileCredentialId, variable: 'ENV_FILE')]) {
+                            sh """
+                            echo "Copying env file to workspace as ${envFileName}"
+                            cp \$ENV_FILE ${envFileName}
+                            """
+                        }
+                    }
+                }
+            }
+
+            stage('Stop previous app container') {
                 steps {
                     script {
                         echo "Stopping and removing previous app container if exists"
@@ -76,9 +92,6 @@ def call(Map config) {
                 steps {
                     script {
                         def envFile = env.TAG == 'production' ? '.env.production' : '.env.develop'
-
-                        echo "Pulling latest image ${FULL_IMAGE} from registry"
-                        sh "docker pull ${FULL_IMAGE}"
 
                         echo "Deploying app and Supabase stack with ${envFile}"
 
